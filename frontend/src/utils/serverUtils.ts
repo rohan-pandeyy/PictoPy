@@ -86,6 +86,12 @@ export const triggerShutdown = (): void => {
   shutdownInProgress = true;
   console.log('Initialized backend shutdown...');
 
+  // Always call forceKillServer as backup - it will kill both Server and Sync
+  // This is belt-and-suspenders: HTTP shutdown + process kill
+  forceKillServer().catch((err) =>
+    console.error('Force kill during shutdown:', err),
+  );
+
   fetch(`${BACKEND_URL}/shutdown`, {
     method: 'POST',
     keepalive: true,
@@ -97,17 +103,11 @@ export const triggerShutdown = (): void => {
         console.error(
           `Shutdown request failed with status: ${response.status}`,
         );
-        forceKillServer().catch((err) =>
-          console.error('Fallback force kill failed:', err),
-        );
       }
       shutdownInProgress = false; // Reset on success or handled failure
     })
     .catch((error) => {
       console.error('Shutdown request failed:', error);
-      forceKillServer().catch((err) =>
-        console.error('Fallback force kill failed:', err),
-      );
       shutdownInProgress = false; // Reset on error
     });
 };
