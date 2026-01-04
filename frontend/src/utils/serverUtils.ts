@@ -1,6 +1,5 @@
 import { Command } from '@tauri-apps/plugin-shell';
 import { invoke } from '@tauri-apps/api/core';
-import { platform } from '@tauri-apps/plugin-os';
 import { BACKEND_URL } from '@/config/Backend.ts';
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
@@ -10,7 +9,32 @@ const SHUTDOWN_RECHECK_DELAY_MS = 1000;
 let shutdownInProgress = false;
 
 const isWindows = (): boolean => {
-  return platform() === 'windows';
+  return navigator.userAgent.toLowerCase().includes('windows');
+};
+
+const TAURI_READY_TIMEOUT_MS = 5000;
+const TAURI_READY_CHECK_INTERVAL_MS = 100;
+
+const waitForTauriReady = async (): Promise<boolean> => {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < TAURI_READY_TIMEOUT_MS) {
+    if (
+      typeof window !== 'undefined' &&
+      '__TAURI_INTERNALS__' in window &&
+      window.__TAURI_INTERNALS__ !== undefined
+    ) {
+      // Small delay to ensure plugins are also initialized
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return true;
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, TAURI_READY_CHECK_INTERVAL_MS),
+    );
+  }
+
+  console.warn('Tauri readiness check timed out');
+  return false;
 };
 
 const isServerRunning = async (): Promise<boolean> => {
@@ -29,6 +53,13 @@ const isServerRunning = async (): Promise<boolean> => {
 
 export const startServer = async () => {
   try {
+    // Wait for Tauri to be fully ready (fixes Linux initialization race)
+    const tauriReady = await waitForTauriReady();
+    if (!tauriReady) {
+      console.error('Tauri not ready, cannot start server');
+      return;
+    }
+
     if (!(await isServerRunning())) {
       const serverPath: string = await invoke('get_server_path');
       const command = Command.create(
