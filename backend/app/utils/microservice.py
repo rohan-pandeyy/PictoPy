@@ -59,6 +59,7 @@ def microservice_util_stop_sync_service(timeout: float = 5.0) -> bool:
     import time
 
     start_time = time.time()
+    http_shutdown_sent = False
 
     # Try graceful HTTP shutdown first
     http_timeout = min(timeout, 3.0)  # HTTP request timeout
@@ -68,6 +69,7 @@ def microservice_util_stop_sync_service(timeout: float = 5.0) -> bool:
             response = client.post(f"{SYNC_SERVICE_URL}/api/v1/shutdown")
             if response.status_code == 200:
                 logger.info("Sync microservice acknowledged shutdown request")
+                http_shutdown_sent = True
     except httpx.TimeoutException:
         logger.warning("Timeout waiting for sync microservice shutdown response")
     except httpx.ConnectError:
@@ -79,19 +81,34 @@ def microservice_util_stop_sync_service(timeout: float = 5.0) -> bool:
     if _sync_process is not None:
         try:
             # Give the sync service a moment to process the shutdown
-            time.sleep(0.3)
+            if http_shutdown_sent:
+                time.sleep(0.5)
 
-            # Wait for process to exit gracefully (use remaining timeout)
-            elapsed = time.time() - start_time
-            wait_timeout = max(timeout - elapsed, 1.0)
-            exit_code = _sync_process.wait(timeout=wait_timeout)
-            logger.info(f"Sync microservice exited with code: {exit_code}")
-            _sync_process = None
-        except subprocess.TimeoutExpired:
-            logger.warning(
-                f"Sync microservice did not exit within {wait_timeout}s, force killing..."
-            )
+            # Check if already exited
+            poll_result = _sync_process.poll()
+            if poll_result is not None:
+                logger.info(
+                    f"Sync microservice already exited with code: {poll_result}"
+                )
+                _sync_process = None
+            else:
+                # Wait for process to exit gracefully (use remaining timeout)
+                elapsed = time.time() - start_time
+                wait_timeout = max(timeout - elapsed, 1.0)
+                try:
+                    exit_code = _sync_process.wait(timeout=wait_timeout)
+                    logger.info(f"Sync microservice exited with code: {exit_code}")
+                    _sync_process = None
+                except subprocess.TimeoutExpired:
+                    logger.warning(
+                        f"Sync microservice did not exit within {wait_timeout}s, force killing..."
+                    )
+                    _force_kill_sync_process()
+        except Exception as e:
+            logger.error(f"Error waiting for sync process: {e}")
             _force_kill_sync_process()
+    else:
+        logger.info("No sync process reference available")
 
     # Clean up log threads
     cleanup_log_threads()
@@ -124,14 +141,34 @@ def _force_kill_sync_process():
                 timeout=5,
             )
         else:
-            # Unix/Linux/macOS - kill process group
+            # Unix/Linux/macOS - try multiple kill methods
             import signal
 
+            # Method 1: Try to kill process group
             try:
-                os.killpg(os.getpgid(pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                # Process already dead or we don't have permission
-                _sync_process.kill()
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGKILL)
+                logger.info(f"Killed process group {pgid}")
+            except (ProcessLookupError, PermissionError, OSError) as e:
+                logger.warning(f"killpg failed: {e}, trying direct kill...")
+                # Method 2: Direct process kill
+                try:
+                    _sync_process.kill()
+                    logger.info("Direct process kill sent")
+                except Exception as e2:
+                    logger.warning(f"Direct kill failed: {e2}, trying os.kill...")
+                    # Method 3: os.kill with SIGKILL
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                        logger.info(f"os.kill SIGKILL sent to {pid}")
+                    except Exception as e3:
+                        logger.error(f"All kill methods failed: {e3}")
+
+            # Wait briefly and verify
+            try:
+                _sync_process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                logger.warning("Process still alive after kill attempts")
 
         logger.info("Sync microservice force killed")
     except Exception as e:
