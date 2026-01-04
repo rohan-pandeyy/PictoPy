@@ -98,6 +98,10 @@ async def shutdown():
     except Exception as e:
         logger.error(f"Error stopping sync microservice: {e}")
 
+    # KILL SYNC NOW - don't wait for delayed shutdown
+    # This ensures sync dies before we return the response
+    _final_kill_sync()
+
     # Define callback to handle potential exceptions in the background task
     def _handle_shutdown_exception(task: asyncio.Task):
         try:
