@@ -108,13 +108,55 @@ def microservice_util_stop_sync_service(timeout: float = 5.0) -> bool:
             logger.error(f"Error waiting for sync process: {e}")
             _force_kill_sync_process()
     else:
-        logger.info("No sync process reference available")
+        logger.info("No sync process reference available, trying kill by name...")
+        _kill_sync_by_name()
 
     # Clean up log threads
     cleanup_log_threads()
 
+    # Final safety: always try kill by name as last resort
+    _kill_sync_by_name()
+
     logger.info("Sync microservice stopped")
     return True
+
+
+def _kill_sync_by_name():
+    """
+    Kill sync microservice by process name as a fallback.
+    This helps when the process reference is lost.
+    """
+    system = platform.system().lower()
+    try:
+        if system == "windows":
+            # Kill by executable name on Windows
+            result = subprocess.run(
+                ["taskkill", "/F", "/IM", "PictoPy_Sync.exe"],
+                capture_output=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                logger.info("Killed PictoPy_Sync.exe by name")
+        else:
+            # Kill by name on Linux/macOS using pkill
+            result = subprocess.run(
+                ["pkill", "-9", "-f", "PictoPy_Sync"],
+                capture_output=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                logger.info("Killed PictoPy_Sync by name using pkill")
+            else:
+                # Fallback: use killall
+                result = subprocess.run(
+                    ["killall", "-9", "PictoPy_Sync"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    logger.info("Killed PictoPy_Sync by name using killall")
+    except Exception as e:
+        logger.warning(f"Kill by name failed: {e}")
 
 
 def _force_kill_sync_process():
@@ -125,6 +167,9 @@ def _force_kill_sync_process():
     global _sync_process
 
     if _sync_process is None:
+        # No process reference, try to kill by name
+        logger.warning("No process reference, attempting kill by name...")
+        _kill_sync_by_name()
         return
 
     try:
@@ -163,16 +208,22 @@ def _force_kill_sync_process():
                         logger.info(f"os.kill SIGKILL sent to {pid}")
                     except Exception as e3:
                         logger.error(f"All kill methods failed: {e3}")
+                        # Method 4: Fallback to kill by name
+                        _kill_sync_by_name()
 
             # Wait briefly and verify
             try:
                 _sync_process.wait(timeout=1.0)
             except subprocess.TimeoutExpired:
-                logger.warning("Process still alive after kill attempts")
+                logger.warning(
+                    "Process still alive after kill attempts, trying by name..."
+                )
+                _kill_sync_by_name()
 
         logger.info("Sync microservice force killed")
     except Exception as e:
         logger.error(f"Error force killing sync microservice: {e}")
+        _kill_sync_by_name()
     finally:
         _sync_process = None
 
