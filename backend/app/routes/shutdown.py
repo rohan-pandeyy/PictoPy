@@ -1,6 +1,5 @@
 import asyncio
 import os
-import subprocess
 import platform
 import functools
 from fastapi import APIRouter
@@ -25,21 +24,20 @@ class ShutdownResponse(BaseModel):
 def _final_kill_sync():
     """
     Final attempt to kill sync process by name right before backend exits.
-    This is a synchronous, blocking call to ensure sync dies.
+    Uses os.system() for fully synchronous, blocking execution.
     """
     system = platform.system().lower()
     try:
         if system == "windows":
-            subprocess.run(
-                ["taskkill", "/F", "/IM", "PictoPy_Sync.exe"],
-                capture_output=True,
-                timeout=3,
-            )
+            os.system("taskkill /F /IM PictoPy_Sync.exe >nul 2>&1")
         else:
-            # Try pkill first
-            subprocess.run(["pkill", "-9", "-f", "PictoPy_Sync"], timeout=3)
-            # Also try killall as backup
-            subprocess.run(["killall", "-9", "PictoPy_Sync"], timeout=3)
+            # Use os.system for fully blocking execution
+            # This ensures the kill completes before os._exit()
+            os.system("pkill -9 -f PictoPy_Sync 2>/dev/null")
+            os.system("killall -9 PictoPy_Sync 2>/dev/null")
+            # Also try with full path pattern
+            os.system("pkill -9 -f 'sync-microservice/PictoPy_Sync' 2>/dev/null")
+        logger.info("Final sync kill commands executed")
     except Exception as e:
         logger.warning(f"Final sync kill attempt: {e}")
 
