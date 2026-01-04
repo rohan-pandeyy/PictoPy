@@ -125,6 +125,7 @@ def _kill_sync_by_name():
     """
     Kill sync microservice by process name as a fallback.
     This helps when the process reference is lost.
+    Note: Using [P] trick to prevent pkill from matching itself.
     """
     system = platform.system().lower()
     try:
@@ -139,15 +140,16 @@ def _kill_sync_by_name():
                 logger.info("Killed PictoPy_Sync.exe by name")
         else:
             # Kill by name on Linux/macOS using pkill
+            # Use [P] trick so pkill doesn't match itself
             result = subprocess.run(
-                ["pkill", "-9", "-f", "PictoPy_Sync"],
+                ["pkill", "-9", "-f", "[P]ictoPy_Sync"],
                 capture_output=True,
                 timeout=5,
             )
             if result.returncode == 0:
                 logger.info("Killed PictoPy_Sync by name using pkill")
             else:
-                # Fallback: use killall
+                # Fallback: use killall (matches by process name, not cmdline)
                 result = subprocess.run(
                     ["killall", "-9", "PictoPy_Sync"],
                     capture_output=True,

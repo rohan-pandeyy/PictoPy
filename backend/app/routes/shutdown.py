@@ -25,18 +25,16 @@ def _final_kill_sync():
     """
     Final attempt to kill sync process by name right before backend exits.
     Uses os.system() for fully synchronous, blocking execution.
+    Note: Using [P] trick to prevent pkill from matching itself.
     """
     system = platform.system().lower()
     try:
         if system == "windows":
             os.system("taskkill /F /IM PictoPy_Sync.exe >nul 2>&1")
         else:
-            # Use os.system for fully blocking execution
-            # This ensures the kill completes before os._exit()
-            os.system("pkill -9 -f PictoPy_Sync 2>/dev/null")
+            # Use [P] trick so pkill doesn't match itself
+            os.system("pkill -9 -f '[P]ictoPy_Sync' 2>/dev/null")
             os.system("killall -9 PictoPy_Sync 2>/dev/null")
-            # Also try with full path pattern
-            os.system("pkill -9 -f 'sync-microservice/PictoPy_Sync' 2>/dev/null")
         logger.info("Final sync kill commands executed")
     except Exception as e:
         logger.warning(f"Final sync kill attempt: {e}")
