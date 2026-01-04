@@ -1,5 +1,7 @@
 import asyncio
 import os
+import subprocess
+import platform
 import functools
 from fastapi import APIRouter
 from app.utils.microservice import cleanup_log_threads
@@ -20,6 +22,28 @@ class ShutdownResponse(BaseModel):
     sync_stopped: bool
 
 
+def _final_kill_sync():
+    """
+    Final attempt to kill sync process by name right before backend exits.
+    This is a synchronous, blocking call to ensure sync dies.
+    """
+    system = platform.system().lower()
+    try:
+        if system == "windows":
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "PictoPy_Sync.exe"],
+                capture_output=True,
+                timeout=3,
+            )
+        else:
+            # Try pkill first
+            subprocess.run(["pkill", "-9", "-f", "PictoPy_Sync"], timeout=3)
+            # Also try killall as backup
+            subprocess.run(["killall", "-9", "PictoPy_Sync"], timeout=3)
+    except Exception as e:
+        logger.warning(f"Final sync kill attempt: {e}")
+
+
 async def _delayed_shutdown(delay: float = 0.5):
     """
     Shutdown the server after a short delay to allow the response to be sent.
@@ -35,6 +59,10 @@ async def _delayed_shutdown(delay: float = 0.5):
         cleanup_log_threads()
     except Exception as e:
         logger.error(f"Error cleaning up log threads: {e}")
+
+    # FINAL SAFETY: Kill sync by name right before we exit
+    # This ensures sync dies even if all other methods failed
+    _final_kill_sync()
 
     # Use os._exit(0) for immediate termination on all platforms
     # SIGTERM doesn't always work reliably with uvicorn
