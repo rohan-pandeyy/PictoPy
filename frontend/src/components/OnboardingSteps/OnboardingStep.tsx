@@ -7,6 +7,7 @@ import { ThemeSelectionStep } from '@/components/OnboardingSteps/ThemeSelectionS
 import { STEPS } from '@/constants/steps';
 import { UpdateStep } from '@/components/OnboardingSteps/UpdateStep';
 import { ServerCheck } from './ServerCheck';
+import { AIModelSetupStep } from '@/components/OnboardingSteps/AIModelSetupStep';
 
 interface OnboardingStepProps {
   stepIndex: number;
@@ -17,7 +18,8 @@ const VISIBLE_STEPS = [
   STEPS.AVATAR_SELECTION_STEP,
   STEPS.FOLDER_SETUP_STEP,
   STEPS.THEME_SELECTION_STEP,
-];
+  STEPS.MODEL_SETUP_STEP,
+] as const;
 
 export const OnboardingStep: React.FC<OnboardingStepProps> = ({
   stepIndex,
@@ -39,6 +41,8 @@ export const OnboardingStep: React.FC<OnboardingStepProps> = ({
         return <FolderSetupStep {...sharedProps} />;
       case STEPS.THEME_SELECTION_STEP:
         return <ThemeSelectionStep {...sharedProps} />;
+      case STEPS.MODEL_SETUP_STEP:
+        return <AIModelSetupStep {...sharedProps} />;
       case STEPS.UPDATE_STEP:
         return <UpdateStep {...sharedProps} />;
       case STEPS.SERVER_CHECK:
