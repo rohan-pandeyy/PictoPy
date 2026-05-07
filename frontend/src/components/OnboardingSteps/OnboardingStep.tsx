@@ -8,10 +8,11 @@ import { STEPS } from '@/constants/steps';
 import { UpdateStep } from '@/components/OnboardingSteps/UpdateStep';
 import { ServerCheck } from './ServerCheck';
 import { AIModelSetupStep } from '@/components/OnboardingSteps/AIModelSetupStep';
+import type { OnboardingStepName } from '@/features/onboardingSlice';
 
 interface OnboardingStepProps {
   stepIndex: number;
-  stepName: string;
+  stepName: OnboardingStepName;
 }
 
 const VISIBLE_STEPS = [
@@ -21,11 +22,19 @@ const VISIBLE_STEPS = [
   STEPS.MODEL_SETUP_STEP,
 ] as const;
 
+type VisibleStepName = (typeof VISIBLE_STEPS)[number];
+
+const isVisibleStepName = (
+  step: OnboardingStepName,
+): step is VisibleStepName => VISIBLE_STEPS.includes(step as VisibleStepName);
+
 export const OnboardingStep: React.FC<OnboardingStepProps> = ({
   stepIndex,
   stepName,
 }) => {
-  const visibleStepIndex = VISIBLE_STEPS.indexOf(stepName);
+  const visibleStepIndex = isVisibleStepName(stepName)
+    ? VISIBLE_STEPS.indexOf(stepName)
+    : -1;
 
   const sharedProps = {
     stepIndex,
